@@ -1,16 +1,36 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/user/application_security/sast/#available-cicd-variables
-# Secret Detection customization: https://docs.gitlab.com/user/application_security/secret_detection/pipeline/configure/
-# Dependency Scanning customization: https://docs.gitlab.com/user/application_security/dependency_scanning/dependency_scanning_sbom/#customizing-analyzer-behavior
-# Container Scanning customization: https://docs.gitlab.com/user/application_security/container_scanning/#customizing-analyzer-behavior
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ci/variables/#cicd-variable-precedence
-stages:
-- test
-- secret-detection
-variables:
-  SECRET_DETECTION_ENABLED: 'true'
-secret_detection:
-  stage: secret-detection
 include:
-- template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+
+stages:
+  - test        # détection de secrets
+  - validate    # Terraform
+
+variables:
+  TF_ROOT: ${CI_PROJECT_DIR}/infra/terraform-gcp
+  TF_VERSION: "1.16.6"
+  SECRET_DETECTION_ENABLED: "true"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.terraform:
+  image:
+    name: hashicorp/terraform:${TF_VERSION}
+    entrypoint: [""]
+  before_script:
+    - cd ${TF_ROOT}
+
+terraform-fmt:
+  extends: .terraform
+  stage: validate
+  script:
+    - terraform fmt -check -recursive -diff
+
+terraform-validate:
+  extends: .terraform
+  stage: validate
+  script:
+    - terraform init -backend=false
+    - terraform validate
